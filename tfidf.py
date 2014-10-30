@@ -4,13 +4,13 @@
 
 import sqlite3
 import nltk
+import collections
 
 
 class tfIdf:
     """
     The tf-idf class
     """
-
     def __init__(self, database=None):
         if not database:
             self.database = "tfidf.sql"
@@ -19,114 +19,129 @@ class tfIdf:
 
         self.defaultFreq = 5
 
-        self.init_database()
+        self.initDatabase()
 
-    def init_database(self):
+    def initDatabase(self):
         """
         Fetches the state from the database, creating it if needed
         """
         db = sqlite3.connect(self.database)
         c = db.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS state (state_variable char(64),"
-                  "state_value int)")
-        c.execute("CREATE TABLE IF NOT EXISTS words (word char(50), "
-                  "number_occurences int)")
-        c.execute("SELECT state_value FROM state WHERE state_variable ="
+        c.execute("CREATE TABLE IF NOT EXISTS state ("
+                  "id INTEGER PRIMARY KEY,"
+                  "stateVariable char(64) UNIQUE,"
+                  "stateValue int)"
+                  )
+        c.execute("CREATE TABLE IF NOT EXISTS words ("
+                  "id INTEGER PRIMARY KEY,"
+                  "word char(50) UNIQUE,"
+                  "numberOccurences int)")
+        c.execute("SELECT stateValue FROM state WHERE stateVariable ="
                   "\"cardCorpus\"")
         qRes = c.fetchone()
         if (qRes):
             self.cardCorpus, = qRes
         else:
             self.cardCorpus = 0
-            c.execute("INSERT INTO state (state_variable, state_value)"
+            c.execute("INSERT INTO state (stateVariable, stateValue)"
                       "values (\"cardCorpus\", 0)")
 
         db.commit()
         db.close()
 
-    def increase_corpus_cardinal(self):
+    def increaseCorpusCardinal(self):
         """
         Tells that a file has been added to the corpus
         """
         self.cardCorpus += 1
         db = sqlite3.connect(self.database)
         c = db.cursor()
-        c.execute("UPDATE state SET state_value = " + str(self.cardCorpus) +
-                  " WHERE state_variable = \"cardCorpus\"")
+        c.execute("UPDATE state SET stateValue = " + str(self.cardCorpus) +
+                  " WHERE stateVariable = \"cardCorpus\"")
         db.commit()
         db.close()
 
-    def add_to_corpus(self, stream):
+    def addStreamToCorpus(self, stream):
         """
         Adds a file to the corpus
         """
-        self.increase_corpus_cardinal()
-        for line in stream:
-            self.parse_line(line)
+        self.increaseCorpusCardinal()
+        tfIdfs = self.parseStream(stream)
+        self.addToDb(tfIdfs)
 
-    def add_string_to_corpus(self, string):
+    def addStringToCorpus(self, string):
         """
         Adds a string to the corpus
         """
-        self.increase_corpus_cardinal()
-        self.parse_line(string)
+        self.increaseCorpusCardinal()
+        tfIdfs = self.parseString(string)
+        self.addToDb(tfIdfs)
 
-    def parse_line(self, line):
-        known_words = {}
-        # The words in the document that are part of the dictionnary
-        new_words = {}
-        # The words in the document that have never been met before
-        cardCorpus = int(self.cardCorpus)
-        # Number of documents in the corpus
-        db = sqlite3.connect(self.database)
-        c = db.cursor()
-        tfidfs = {}
+    def parseStream(self, stream):
+        """
+        Parse a stream and returns the tfidfs of the words in it
+        """
+        words = self.countWordsInStream(stream)
+        return self.calculateTfIdf(words)
+
+    def parseString(self, string):
+        """
+        Parse a string and returns the tfidfs of the words in it
+        """
+        words = self.countWordsInString(string)
+        return self.calculateTfIdf(words)
+
+    def countWordsInStream(self, stream):
+        self.increaseCorpusCardinal()
+        wordCounts = collections.Counter()
+        for line in stream:
+            wordCounts += self.countWordsInString(line)
+        return wordCounts
+
+    def countWordsInString(self, line):
         tokens = [word.lower() for word in nltk.word_tokenize(line)]
-        searchQuery = "SELECT number_occurences FROM words WHERE word =?"
-
+        wordCounts = collections.Counter()
         for token in tokens:
-            if token not in known_words and token not in new_words:
-                c.execute(searchQuery, (token,))
-                fetch = c.fetchone()
-                if fetch:
-                    nbOcc, = fetch
-                    known_words[token] = {'occurencesInText': 1,
-                                          'occurencesInCorpus': int(nbOcc)}
-                else:
-                    new_words[token] = {'occurencesInText': 1,
-                                        'occurencesInCorpus': 0}
-            elif token in known_words:
-                known_words[token]['occurencesInText'] += 1
+            if token in wordCounts:
+                wordCounts[token] += 1
             else:
-                new_words[token]['occurencesInText'] += 1
+                wordCounts[token] = 1
+        return wordCounts
 
-        cardTxt = len(known_words) + len(new_words)
-        for token in known_words:
-            tfidfs[token] = ((known_words[token]['occurencesInText']/cardTxt) *
-                             (cardCorpus /
-                              known_words[token]['occurencesInCorpus']))
-        for token in new_words:
-            tfidfs[token] = ((new_words[token]['occurencesInText']/cardTxt) *
-                             self.defaultFreq)
-        db.close()
+    def calculateIdf(self, cursor, word, defaultIdf=1.5):
+        searchQuery = "SELECT numberOccurences FROM words WHERE word =?"
+        cursor.execute(searchQuery, (word,))
+        fetch = cursor.fetchone()
+        if fetch:
+            nbOcc, = fetch
+            idf = self.cardCorpus / nbOcc
+        else:
+            idf = defaultIdf
+        return idf
 
-        for word in sorted(tfidfs, key=tfidfs.get, reverse=False):
-            print(word, tfidfs[word])
+    def calculateTf(self, count, cardTxt):
+        return count/cardTxt
 
-        self.add_to_db(known_words, new_words)
-
-    def add_to_db(self, known_words, new_words):
-        updateQuery = ("UPDATE words SET number_occurences="
-                       "number_occurences + 1 WHERE word=:word")
-        insertQuery = ("INSERT INTO words (word, number_occurences)"
-                       "values (:word, 1)")
+    def calculateTfIdf(self, wordCounts, defaultIdf=1.5):
+        frequencies = {}
         db = sqlite3.connect(self.database)
         c = db.cursor()
-        for token, nbOcc in known_words.items():
-            c.execute(updateQuery, {"word": token})
+        cardTxt = len(wordCounts)
+        for word, count in wordCounts.items():
+            frequencies[word] = (self.calculateTf(count, cardTxt) /
+                                 self.calculateIdf(c, word, defaultIdf))
 
-        for token, nbOcc in new_words.items():
-            c.execute(insertQuery, {"word": token})
+        return frequencies
+
+    def addToDb(self, words):
+        query = ("INSERT OR REPLACE INTO words (word, numberOccurences) "
+                 "VALUES (:word, "
+                 "coalesce((select numberOccurences + 1 from words "
+                 "WHERE word =:word), 1))")
+        db = sqlite3.connect(self.database)
+        c = db.cursor()
+        for token, occurences in words.items():
+            c.execute(query, {'word': token})
 
         db.commit()
         db.close()

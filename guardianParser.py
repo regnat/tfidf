@@ -2,6 +2,7 @@ import html5lib
 import requests
 import tfidf
 
+
 class guardianParser:
     """
     A simple class to parse articles from the guardian for tf-idf
@@ -29,7 +30,7 @@ class guardianParser:
         if (mainNode):
             for node in mainNode.findall('.//*'):
                 if (node.text):
-                    tf.add_line_to_corpus(node.text)
+                    tf.addStringToCorpus(node.text)
 
     def getUrisFromRss(rssUri):
         """
@@ -37,7 +38,8 @@ class guardianParser:
         """
         r = requests.get(rssUri)
         rss = html5lib.parse(r.text)
-        return [item.find(".//{http://www.w3.org/1999/xhtml}link").tail for item in rss.findall(".//{http://www.w3.org/1999/xhtml}item")]
+        return [item.find(".//{http://www.w3.org/1999/xhtml}link").tail for
+                item in rss.findall(".//{http://www.w3.org/1999/xhtml}item")]
 
     def parseRss(rssUri):
         """
