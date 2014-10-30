@@ -1,26 +1,23 @@
 import html5lib
 import requests
-import tfidf
 
 
 class guardianParser:
     """
-    A simple class to parse articles from the guardian for tf-idf
+    A simple class to parse articles from the guardian
     Use it with
-    guardianParser.parseGuardianPage(uri)
+    guardianParser.parseGuardianPage(uri, fd)
     or
-    guardianParser.parseRss(RssUri)
+    guardianParser.getUrisFromRss(rssUri)
     """
 
-    def parseGuardianPage(uri):
+    def parseGuardianPage(uri, fd):
         """
-        Parse a single article
+        Parse a single article and outputs its content to a file descriptor
         """
         r = requests.get(uri)
         doc = html5lib.parse(r.text)
         mainNode = None
-
-        tf = tfidf.tfIdf()
 
         for node in doc.findall(".//{http://www.w3.org/1999/xhtml}div"):
             if ('class', 'flexible-content-body') in node.items():
@@ -29,8 +26,8 @@ class guardianParser:
 
         if (mainNode):
             for node in mainNode.findall('.//*'):
-                if (node.text):
-                    tf.addStringToCorpus(node.text)
+                if node.text:
+                    fd.write(node.text)
 
     def getUrisFromRss(rssUri):
         """
@@ -41,9 +38,3 @@ class guardianParser:
         return [item.find(".//{http://www.w3.org/1999/xhtml}link").tail for
                 item in rss.findall(".//{http://www.w3.org/1999/xhtml}item")]
 
-    def parseRss(rssUri):
-        """
-        Parse all the articles present in the given RSS feed
-        """
-        for uri in guardianParser.getUrisFromRss(rssUri):
-            guardianParser.parseGuardianPage(uri)
