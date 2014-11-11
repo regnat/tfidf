@@ -3,7 +3,6 @@
 # Simple tf-idf library
 
 import sqlite3
-import nltk
 import collections
 
 
@@ -99,7 +98,7 @@ class tfIdf:
         return wordCounts
 
     def countWordsInString(self, line):
-        tokens = [word.lower() for word in nltk.word_tokenize(line)]
+        tokens = [word.lower() for word in line.split()]
         wordCounts = collections.Counter()
         for token in tokens:
             if token in wordCounts:
